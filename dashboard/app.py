@@ -7,6 +7,7 @@ grid pricing into actionable battery energy storage (BESS) investment PnL.
 """
 
 import os
+import sys
 import duckdb
 import streamlit as st
 import plotly.express as px
@@ -26,6 +27,13 @@ DB_PATH = os.path.join(BASE_DIR, "data", "lakehouse", "energy_lakehouse.duckdb")
 
 @st.cache_data(ttl=60)
 def load_energy_data():
+    # Auto-initialize database on first run if missing in cloud environment
+    if not os.path.exists(DB_PATH):
+        import subprocess
+        os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+        subprocess.run([sys.executable, os.path.join(BASE_DIR, "ingest_engine", "ingest_grid_data.py")], check=True)
+        subprocess.run([sys.executable, os.path.join(BASE_DIR, "models", "arbitrage_analysis.py")], check=True)
+        
     con = duckdb.connect(DB_PATH, read_only=True)
     
     hourly_df = con.execute("""
