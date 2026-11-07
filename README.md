@@ -1,9 +1,11 @@
 # ⚡ VoltPulse: National Power Grid Telemetry & Battery Energy Arbitrage Lakehouse
 
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-Streamlit%20Cloud-FF4B4B.svg?style=for-the-badge&logo=streamlit)](https://abbderahmenblk31-voltpulse-energy-lakehouse-dashboardapp-nklezb.streamlit.app/)
 [![Energy Lakehouse CI](https://github.com/Abbderahmenblk31/voltpulse-energy-lakehouse/actions/workflows/ci.yml/badge.svg)](https://github.com/Abbderahmenblk31/voltpulse-energy-lakehouse/actions)
 [![Engine: DuckDB](https://img.shields.io/badge/Engine-DuckDB%20Time--Series-yellow.svg)](https://duckdb.org/)
 [![Data: 100% Real Fraunhofer ISE](https://img.shields.io/badge/Data-Official%20Fraunhofer%20ISE%20API-blue.svg)](https://api.energy-charts.info/)
-[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12%20%7C%203.13-brightgreen.svg)](https://python.org)
+
+> 🔗 **Interactive Cloud Application:** [Launch VoltPulse Live Dashboard](https://abbderahmenblk31-voltpulse-energy-lakehouse-dashboardapp-nklezb.streamlit.app/)
 
 An enterprise-grade **Energy Data Engineering & Quantitative Analytics Lakehouse** that ingests **100% genuine wholesale electricity spot prices (Day-Ahead)** and **realized multi-fuel generation telemetry** from the official **Fraunhofer ISE / German Federal Grid Open Data API**. 
 
