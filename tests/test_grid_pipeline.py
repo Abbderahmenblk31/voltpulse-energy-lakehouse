@@ -57,5 +57,15 @@ def test_executive_summary_integrity(db_conn):
     assert total_days > 0, "No market days analyzed in summary!"
     assert total_revenue > 0, f"Expected positive BESS revenue, got: {total_revenue}"
 
+def test_prescriptive_dispatch_plan(db_conn):
+    """Verifies that the prescriptive 24-hour battery dispatch plan is computed and maintains SOC limits."""
+    plan_df = db_conn.execute("SELECT * FROM mart_prescriptive_dispatch_plan").df()
+    assert len(plan_df) == 24, f"Expected 24 hourly dispatch actions, got {len(plan_df)}"
+    assert (plan_df["resulting_soc_mwh"] >= 0.0).all(), "Negative SOC detected in dispatch plan!"
+    assert (plan_df["resulting_soc_mwh"] <= 20.0).all(), "SOC exceeded 20 MWh max capacity in dispatch plan!"
+    assert plan_df["cumulative_pnl_eur"].iloc[-1] > 0, "Prescriptive dispatch plan failed to generate positive PnL!"
+    assert "🟢 CHARGE (10 MW)" in plan_df["recommended_action"].values, "No charge actions generated!"
+    assert "🔴 DISCHARGE (10 MW)" in plan_df["recommended_action"].values, "No discharge actions generated!"
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

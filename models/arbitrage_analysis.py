@@ -11,6 +11,7 @@ Executes SQL modeling inside DuckDB to calculate:
 import os
 import sys
 import duckdb
+import pandas as pd
 
 if sys.platform.startswith("win"):
     import io
@@ -141,6 +142,87 @@ def run_energy_models():
     
     summary = con.execute("SELECT * FROM mart_energy_executive_summary").fetchone()
     
+    # 4. Prescriptive Decision Intelligence: 24-Hour Optimal Battery Dispatch Engine
+    print("[4/4] Generating Prescriptive Decision Plan: 24h Optimal Dispatch Schedule...")
+    
+    # Extract latest complete 24-hour market day with hourly averaged prices
+    latest_day_df = con.execute("""
+        SELECT 
+            market_date,
+            hour_of_day,
+            ROUND(AVG(spot_price_eur_mwh), 2) as spot_price_eur_mwh,
+            MAX(is_negative_price) as is_negative_price
+        FROM silver_hourly_market
+        WHERE market_date = (
+            SELECT market_date 
+            FROM silver_hourly_market 
+            GROUP BY market_date 
+            HAVING COUNT(DISTINCT hour_of_day) = 24 
+            ORDER BY market_date DESC 
+            LIMIT 1
+        )
+        GROUP BY market_date, hour_of_day
+        ORDER BY hour_of_day ASC;
+    """).df()
+    
+    if len(latest_day_df) == 24:
+        morning_df = latest_day_df[latest_day_df["hour_of_day"] <= 14]
+        evening_df = latest_day_df[latest_day_df["hour_of_day"] >= 16]
+        
+        charge_hours = set(morning_df.sort_values(by="spot_price_eur_mwh").head(2)["hour_of_day"])
+        discharge_hours = set(evening_df.sort_values(by="spot_price_eur_mwh", ascending=False).head(2)["hour_of_day"])
+        
+        soc = 0.0 # Initial SOC in MWh
+        plan_records = []
+        cumulative_pnl = 0.0
+        
+        for idx, row in latest_day_df.iterrows():
+            h = int(row["hour_of_day"])
+            p = float(row["spot_price_eur_mwh"])
+            neg = int(row["is_negative_price"])
+            
+            if h in charge_hours and soc < 20.0:
+                action = "🟢 CHARGE (10 MW)"
+                power_mw = 10.0
+                soc = min(20.0, soc + 10.0)
+                cashflow = -(10.0 * p)
+                if neg == 1 or p < 0:
+                    rationale = f"NEGATIVE PRICE OPPORTUNITY (€{p:.2f}/MWh): Grid pays operator to absorb surplus power. Max charge."
+                else:
+                    rationale = f"Lowest off-peak tariff window (€{p:.2f}/MWh). Charge 10 MW to reach optimal storage depth."
+            elif h in discharge_hours and soc > 0.0:
+                action = "🔴 DISCHARGE (10 MW)"
+                power_mw = -10.0
+                soc = max(0.0, soc - 10.0)
+                cashflow = 10.0 * BESS_SPECS["round_trip_efficiency"] * p
+                rationale = f"Peak price spike (€{p:.2f}/MWh). Dispatch 10 MW into high-demand grid block to harvest max spread."
+            else:
+                action = "⚪ IDLE / HOLD"
+                power_mw = 0.0
+                cashflow = 0.0
+                rationale = f"Market price (€{p:.2f}/MWh) within neutral corridor. Maintain SOC ({soc:.1f} MWh) to avoid degradation."
+                
+            cumulative_pnl += cashflow
+            plan_records.append({
+                "market_date": row["market_date"],
+                "hour_of_day": h,
+                "spot_price_eur_mwh": round(p, 2),
+                "recommended_action": action,
+                "dispatch_power_mw": power_mw,
+                "resulting_soc_mwh": round(soc, 2),
+                "hourly_cashflow_eur": round(cashflow, 2),
+                "cumulative_pnl_eur": round(cumulative_pnl, 2),
+                "prescriptive_decision_rationale": rationale
+            })
+            
+        df_plan = pd.DataFrame(plan_records)
+        con.register("df_plan", df_plan)
+        con.execute("""
+            CREATE OR REPLACE TABLE mart_prescriptive_dispatch_plan AS
+            SELECT * FROM df_plan;
+        """)
+        print(f"   -> Prescriptive dispatch plan generated with €{cumulative_pnl:,.2f} projected net profit.")
+
     print("\n" + "="*80)
     print("🔋 BESS BATTERY ARBITRAGE FINANCIAL SCORECARD (10 MW / 20 MWh SYSTEM)")
     print("="*80)

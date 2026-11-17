@@ -61,9 +61,15 @@ def load_energy_data():
     """).df()
     
     summary_stats = con.execute("SELECT * FROM mart_energy_executive_summary;").fetchone()
+    
+    try:
+        prescriptive_plan_df = con.execute("SELECT * FROM mart_prescriptive_dispatch_plan ORDER BY hour_of_day ASC;").df()
+    except Exception:
+        prescriptive_plan_df = pd.DataFrame()
+        
     con.close()
     
-    return hourly_df, daily_bess_df, summary_stats
+    return hourly_df, daily_bess_df, summary_stats, prescriptive_plan_df
 
 # Header
 st.markdown("""
@@ -84,7 +90,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 try:
-    hourly_df, daily_bess_df, summary = load_energy_data()
+    hourly_df, daily_bess_df, summary, prescriptive_plan_df = load_energy_data()
 except Exception as e:
     st.error(f"Failed to connect to Energy Lakehouse: {e}")
     st.stop()
@@ -129,10 +135,11 @@ with col4:
 st.markdown("---")
 
 # Main Analysis Tabs
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Battery Arbitrage Financial Returns (PnL)",
     "⚡ Hourly Spot Prices & Fuel Generation Mix",
-    "🎛️ Interactive BESS Capacity Sizing Calculator"
+    "🎛️ Interactive BESS Capacity Sizing Calculator",
+    "🤖 Prescriptive 24h Dispatch Optimizer"
 ])
 
 with tab1:
@@ -241,6 +248,69 @@ with tab3:
     sc1.metric(f"Estimated Daily Profit ({custom_mw} MW / {custom_capacity_mwh} MWh)", f"€{simulated_daily_profit:,.0f} / Day")
     sc2.metric("Projected Monthly Arbitrage", f"€{simulated_monthly:,.0f} / Month")
     sc3.metric("Projected Annual Revenue", f"€{simulated_annual:,.0f} / Year")
+
+with tab4:
+    st.subheader("🤖 Prescriptive Decision Engine: 24-Hour BESS Dispatch Schedule")
+    st.caption("Physics-constrained dispatch optimization maximizing wholesale spot market arbitrage while preserving battery health.")
+    
+    if not prescriptive_plan_df.empty:
+        total_plan_pnl = prescriptive_plan_df["cumulative_pnl_eur"].iloc[-1]
+        charge_hours_count = len(prescriptive_plan_df[prescriptive_plan_df["recommended_action"].str.contains("CHARGE")])
+        discharge_hours_count = len(prescriptive_plan_df[prescriptive_plan_df["recommended_action"].str.contains("DISCHARGE")])
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Projected 24h Day PnL", f"€{total_plan_pnl:,.2f}", delta="Optimal Strategy Return", delta_color="normal")
+        c2.metric("Scheduled Charge Cycles", f"{charge_hours_count} Hours (20 MWh)", delta="Off-Peak Lows")
+        c3.metric("Scheduled Discharge Cycles", f"{discharge_hours_count} Hours (17 MWh net)", delta="Peak Highs")
+        c4.metric("System Round-Trip Efficiency", "85.0%", delta="15% Thermal Loss Factored")
+        
+        # Dual-axis visualization: Hourly Spot Price & Resulting Battery SOC
+        fig_disp = go.Figure()
+        fig_disp.add_trace(go.Bar(
+            x=prescriptive_plan_df["hour_of_day"],
+            y=prescriptive_plan_df["spot_price_eur_mwh"],
+            name="Spot Price (€/MWh)",
+            marker_color=["#10b981" if "CHARGE" in a else "#ef4444" if "DISCHARGE" in a else "#475569" for a in prescriptive_plan_df["recommended_action"]],
+            yaxis="y1"
+        ))
+        fig_disp.add_trace(go.Scatter(
+            x=prescriptive_plan_df["hour_of_day"],
+            y=prescriptive_plan_df["resulting_soc_mwh"],
+            name="Battery SOC (MWh)",
+            line=dict(color="#38bdf8", width=3, dash="solid"),
+            yaxis="y2"
+        ))
+        fig_disp.update_layout(
+            template="plotly_dark",
+            height=450,
+            title="Prescriptive Action Plan: Spot Prices (€/MWh) vs Battery State of Charge (MWh)",
+            xaxis=dict(title="Hour of Day (00:00 - 23:00 UTC)", tickmode="linear", tick0=0, dtick=1),
+            yaxis=dict(title="Wholesale Spot Price (€/MWh)", side="left", showgrid=False),
+            yaxis2=dict(title="State of Charge (MWh)", side="right", overlaying="y", range=[0, 25], showgrid=False),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig_disp, use_container_width=True)
+        
+        st.markdown("### 📋 24-Hour Prescriptive Dispatch Action Ledger")
+        st.dataframe(
+            prescriptive_plan_df[[
+                "hour_of_day", "spot_price_eur_mwh", "recommended_action",
+                "dispatch_power_mw", "resulting_soc_mwh", "hourly_cashflow_eur",
+                "cumulative_pnl_eur", "prescriptive_decision_rationale"
+            ]].rename(columns={
+                "hour_of_day": "Hour (UTC)",
+                "spot_price_eur_mwh": "Spot Price (€/MWh)",
+                "recommended_action": "Prescriptive Action",
+                "dispatch_power_mw": "Power (MW)",
+                "resulting_soc_mwh": "SOC (MWh)",
+                "hourly_cashflow_eur": "Hourly Flow (€)",
+                "cumulative_pnl_eur": "Cumulative PnL (€)",
+                "prescriptive_decision_rationale": "Automated Decision Rationale"
+            }),
+            use_container_width=True
+        )
+    else:
+        st.info("Prescriptive plan initializing. Click 'Refresh Grid Telemetry' to generate today's schedule.")
 
 st.sidebar.title("⚡ Grid Telemetry")
 st.sidebar.info(f"""

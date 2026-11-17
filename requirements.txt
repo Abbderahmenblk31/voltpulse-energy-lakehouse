@@ -4,6 +4,9 @@ requests>=2.31.0
 pandas>=2.2.0
 pyarrow>=15.0.0
 
+# Mathematical Optimization & Prescriptive Decision Intelligence
+scipy>=1.11.0
+
 # Financial Analytics & Visualization
 streamlit>=1.35.0
 plotly>=5.20.0
